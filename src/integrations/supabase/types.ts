@@ -14,7 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      items: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          recurrence: string | null
+          status: string
+          title: string
+          user_id: string
+          when_at: string | null
+          who: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          recurrence?: string | null
+          status?: string
+          title: string
+          user_id: string
+          when_at?: string | null
+          who?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          recurrence?: string | null
+          status?: string
+          title?: string
+          user_id?: string
+          when_at?: string | null
+          who?: string | null
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
