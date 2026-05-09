@@ -3,8 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useSpeechRecognition, speak } from "@/hooks/use-voice";
-import { useServerFn } from "@tanstack/react-start";
-import { processVoiceTurn } from "@/lib/voice.functions";
 import { Mic, MicOff, LogOut, CalendarPlus, Check, Sparkles, Send, Bell, ListTodo } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -35,7 +33,6 @@ function Home() {
   const [busy, setBusy] = useState(false);
   const [textInput, setTextInput] = useState("");
   const speech = useSpeechRecognition({ lang: "en-IN" });
-  const processFn = useServerFn(processVoiceTurn);
   const lastSubmittedRef = useRef("");
 
   useEffect(() => {
@@ -80,7 +77,16 @@ function Home() {
     if (!transcript) return;
     setBusy(true);
     try {
-      const res = await processFn({ data: { transcript } });
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error("Please sign in again");
+      const r = await fetch("/api/voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ transcript }),
+      });
+      const res = await r.json();
+      if (!r.ok) throw new Error(res?.error || "Request failed");
       setReply(res.reply);
       speak(res.reply, "en-IN");
       await refresh();
