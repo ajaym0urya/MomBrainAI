@@ -1,4 +1,4 @@
-# MomBrain — Voice-First AI Family OS
+# MomBrain — Voice-First AI Companion
 
 MomBrain is a voice-first web app that turns everyday spoken thoughts (in Hindi, English, or Hinglish) into organized tasks and reminders. Built for busy parents and family managers, it removes the friction of typing, tapping through menus, or juggling separate calendar and to-do apps — just tap the mic and speak.
 
