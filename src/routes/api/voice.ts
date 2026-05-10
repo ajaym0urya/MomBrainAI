@@ -2,13 +2,13 @@ import "@tanstack/react-start";
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
 
 const ItemSchema = z.object({
   kind: z.enum(["task", "reminder"]),
-  title: z.string(),
+  title: z.string().min(1),
   who: z.string().nullable().optional(),
   whenISO: z.string().nullable().optional(),
   recurrence: z.string().nullable().optional(),
@@ -18,8 +18,23 @@ const ResponseSchema = z.object({
   intent: z.enum(["create", "clarify", "list", "complete", "chat"]),
   items: z.array(ItemSchema).default([]),
   needsClarification: z.boolean().default(false),
-  reply: z.string(),
+  reply: z.string().min(1),
 });
+
+function extractJson(text: string): unknown {
+  let cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  const start = cleaned.search(/[\{\[]/);
+  const endChar = start !== -1 && cleaned[start] === "[" ? "]" : "}";
+  const end = cleaned.lastIndexOf(endChar);
+  if (start === -1 || end === -1) throw new Error("No JSON in response");
+  cleaned = cleaned.substring(start, end + 1);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    cleaned = cleaned.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]").replace(/[\x00-\x1F\x7F]/g, "");
+    return JSON.parse(cleaned);
+  }
+}
 
 export const Route = createFileRoute("/api/voice")({
   server: {
@@ -69,16 +84,27 @@ export const Route = createFileRoute("/api/voice")({
             .limit(30);
 
           const gateway = createLovableAiGatewayProvider(apiKey);
-          const model = gateway("google/gemini-3-flash-preview");
+          const model = gateway("google/gemini-2.5-flash");
           const now = new Date().toISOString();
+
           const system = `You are MomBrain, a warm, helpful family coordinator. Users speak Hindi, English, or Hinglish. Convert their speech into TASKS or REMINDERS.
 
+Output ONLY a single JSON object (no prose, no markdown fences) matching this exact shape:
+{
+  "intent": "create" | "clarify" | "list" | "complete" | "chat",
+  "items": [{ "kind": "task" | "reminder", "title": string, "who": string|null, "whenISO": string|null, "recurrence": string|null }],
+  "needsClarification": boolean,
+  "reply": string
+}
+
 Rules:
-- Output ONLY JSON matching the schema.
-- Decide intent: "create" (new task/reminder), "clarify" (missing time/details — ask one short question), "list" (user wants to know pending items), "complete" (mark done), or "chat" (general talk).
-- If the user mentions an action without a clear time, set intent="clarify" and ask for the time in your reply (Hinglish friendly). Do NOT create the item yet.
-- For "create": fill items[]. Use ISO 8601 for whenISO in user's local context (assume IST/Asia/Kolkata if unspecified). Use "task" for action items, "reminder" for time-based alerts.
-- "reply" is a short, warm message that will be SPOKEN ALOUD. Keep it under 25 words. Mirror the user's language (Hinglish if they used Hinglish).
+- "create": new task/reminder. Fill items[]. Use ISO 8601 for whenISO assuming Asia/Kolkata timezone unless stated.
+- "clarify": missing time/critical detail. Ask a short Hinglish-friendly question in "reply". items can be empty.
+- "list": user asks what's pending. items empty; mention pending count in reply.
+- "complete": user marked something done. Put matching titles in items[].
+- "chat": general talk. items empty.
+- "reply" is short (under 25 words), warm, will be SPOKEN ALOUD. Mirror the user's language.
+- If user gives a clear action with a clear time, prefer "create" — do not over-clarify.
 - Current time: ${now}
 - Pending items: ${JSON.stringify(pending ?? [])}`;
 
@@ -87,21 +113,30 @@ Rules:
             .map((m) => `${m.role}: ${m.content}`)
             .join("\n");
 
-          const { experimental_output } = await generateText({
+          const { text } = await generateText({
             model,
             system,
-            prompt: `Conversation so far:\n${conversation}\n\nProcess the latest user message and respond with JSON.`,
-            experimental_output: Output.object({ schema: ResponseSchema }),
+            prompt: `Conversation so far:\n${conversation}\n\nRespond now with the JSON object only.`,
           });
 
-          const parsed = experimental_output;
+          let parsed: z.infer<typeof ResponseSchema>;
+          try {
+            const raw = extractJson(text);
+            parsed = ResponseSchema.parse(raw);
+          } catch (e: any) {
+            console.error("voice parse error:", e?.message, "raw:", text?.slice(0, 500));
+            const fallback = "Sorry, I didn't catch that clearly. Could you repeat?";
+            await supabase.from("messages").insert({ user_id: userId, role: "assistant", content: fallback });
+            return Response.json({ reply: fallback, intent: "chat" });
+          }
+
           await supabase
             .from("messages")
             .insert({ user_id: userId, role: "assistant", content: parsed.reply });
 
-          if (parsed.intent === "create" && !parsed.needsClarification) {
+          if (parsed.intent === "create" && !parsed.needsClarification && parsed.items.length > 0) {
             for (const item of parsed.items) {
-              await supabase.from("items").insert({
+              const { error: insErr } = await supabase.from("items").insert({
                 user_id: userId,
                 kind: item.kind,
                 title: item.title,
@@ -109,6 +144,7 @@ Rules:
                 when_at: item.whenISO ?? null,
                 recurrence: item.recurrence ?? null,
               });
+              if (insErr) console.error("item insert error:", insErr.message);
             }
           }
 
@@ -124,7 +160,7 @@ Rules:
 
           return Response.json({ reply: parsed.reply, intent: parsed.intent });
         } catch (err: any) {
-          console.error("voice route error:", err);
+          console.error("voice route error:", err?.message || err);
           return Response.json({ error: err?.message || "Server error" }, { status: 500 });
         }
       },
