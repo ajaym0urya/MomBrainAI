@@ -16,7 +16,7 @@ export const Route = createFileRoute("/auth")({
   }),
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: "/" });
+    if (data.session) throw redirect({ to: "/app" });
   },
   component: AuthPage,
 });
@@ -44,7 +44,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
-      navigate({ to: "/" });
+      navigate({ to: "/app" });
     } catch (err: any) {
       toast.error(err?.message || "Something went wrong");
     } finally {
