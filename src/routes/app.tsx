@@ -107,7 +107,7 @@ function Home() {
 
   async function signOut() {
     await supabase.auth.signOut();
-    navigate({ to: "/auth" });
+    navigate({ to: "/" });
   }
 
   const active = items.filter((i) => i.status === "active");
