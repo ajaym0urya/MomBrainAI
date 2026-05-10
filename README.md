@@ -11,8 +11,8 @@ Speak naturally → MomBrain's AI understands intent → creates structured task
 ### Examples
 
 ```text
-🎙️ "Aryan ka cricket match Tuesday 5 baje"
-✅ Reminder · Aryan's cricket match · Tue 5:00 PM
+🎙️ "Ajay ka cricket match Tuesday 5 baje"
+✅ Reminder · Ajay's cricket match · Tue 5:00 PM
 ```
 
 ```text
